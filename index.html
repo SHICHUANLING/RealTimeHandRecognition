@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在线手语识别</title>
+    <link href="style.css" rel="stylesheet">
+
+</head>
+<body>
+    <p>在摄像头前用手做出手势，以获取手势识别结果。</br> <b>点击下方按钮以获取摄像头权限</b></p>
+    <button id="webcamButton">开启摄像头</button>
+    
+    <div class="container">
+        <!-- 视频和画布部分 -->
+        <div class="video-container">
+            <div style="position: relative; width: 480px; height: 360px;">
+                <video id="webcam" width="480" height="360" autoplay style="position: absolute; top: 0; left: 0; z-index: 1;"></video>
+                <canvas id="output_canvas" width="480" height="360" style="position: absolute; top: 0; left: 0; z-index: 2;"></canvas>
+            </div>
+
+        <!-- 手势识别结果 -->
+        <div id="gesture_output" class="gesture-result" style="display: none;">
+            手势识别结果将显示在这里。
+        </div>
+    </div>
+
+    <script type="module">
+        import {
+            GestureRecognizer,
+            FilesetResolver,
+            DrawingUtils
+        } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
+
+        let gestureRecognizer;
+        let runningMode = "IMAGE";
+        let webcamRunning = false;
+        const videoHeight = "360px";
+        const videoWidth = "480px";
+        const video = document.getElementById("webcam");
+        const canvasElement = document.getElementById("output_canvas");
+        const canvasCtx = canvasElement.getContext("2d");
+        const gestureOutput = document.getElementById("gesture_output");
+        let enableWebcamButton = document.getElementById("webcamButton");
+
+        const createGestureRecognizer = async () => {
+            const vision = await FilesetResolver.forVisionTasks(
+                "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+            );
+            gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath:
+                        "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+                    delegate: "GPU"
+                },
+                runningMode: runningMode
+            });
+        };
+        createGestureRecognizer();
+
+        function hasGetUserMedia() {
+            return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+        }
+
+        if (hasGetUserMedia()) {
+            enableWebcamButton.addEventListener("click", enableCam);
+        } else {
+            console.warn("getUserMedia() is not supported by your browser");
+        }
+
+        function enableCam(event) {
+            if (!gestureRecognizer) {
+                alert("Please wait for gestureRecognizer to load");
+                return;
+            }
+
+            if (webcamRunning === true) {
+                webcamRunning = false;
+                enableWebcamButton.innerText = "开始识别";
+            } else {
+                webcamRunning = true;
+                enableWebcamButton.innerText = "停止识别";
+            }
+
+            const constraints = { video: true };
+            navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
+                video.srcObject = stream;
+                video.addEventListener("loadeddata", predictWebcam);
+            });
+        }
+
+        let lastVideoTime = -1;
+        let results = undefined;
+        let lastGesture = "";
+
+        async function predictWebcam() {
+            let handDetectedTime = Date.now();
+            if (runningMode === "IMAGE") {
+                runningMode = "VIDEO";
+                await gestureRecognizer.setOptions({ runningMode: "VIDEO" });
+            }
+            let nowInMs = Date.now();
+            if (video.currentTime !== lastVideoTime) {
+                lastVideoTime = video.currentTime;
+                results = gestureRecognizer.recognizeForVideo(video, nowInMs);
+            }
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            const drawingUtils = new DrawingUtils(canvasCtx);
+
+            canvasElement.style.height = videoHeight;
+            video.style.height = videoHeight;
+            canvasElement.style.width = videoWidth;
+            video.style.width = videoWidth;
+
+            if (results.landmarks) {
+                for (const landmarks of results.landmarks) {
+                    drawingUtils.drawConnectors(
+                        landmarks,
+                        GestureRecognizer.HAND_CONNECTIONS,
+                        {
+                            color: "#00FF00",
+                            lineWidth: 5
+                        }
+                    );
+                    drawingUtils.drawLandmarks(landmarks, {
+                        color: "#FF0000",
+                        lineWidth: 2
+                    });
+                }
+            }
+
+            const gestureTranslations = {
+                "Open_Palm": "再见",
+                "Closed_Fist": "加油",
+                "Pointing_Up": "上面",
+                "Thumb_Up": "好",
+                "Thumb_Down": "不好",
+                "Victory": "胜利",
+                "ILoveYou": "爱",
+                "None": "未知手势"
+            };
+
+            function speak(text) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = "zh-CN";
+                utterance.rate = 1;
+                speechSynthesis.speak(utterance);
+            }
+
+            canvasCtx.restore();
+
+            if (results.gestures.length > 0) {
+                gestureOutput.style.display = "block";
+                const categoryName = results.gestures[0][0].categoryName;
+                const categoryScore = parseFloat(
+                    results.gestures[0][0].score * 100
+                ).toFixed(2);
+                const handedness = results.handednesses[0][0].displayName;
+
+                const translatedGesture = gestureTranslations[categoryName] || "未知手势";
+
+                gestureOutput.innerText = `手势识别结果: ${translatedGesture}\n置信度: ${categoryScore}`;
+
+                if (translatedGesture !== lastGesture && translatedGesture != "未知手势") {
+                    const speechText = `${translatedGesture}`;
+                    speak(speechText);
+                    lastGesture = translatedGesture;
+                    let resultDisplayTime = Date.now();
+                    console.log("Result displayed at:", Date.now());
+                    if (handDetectedTime && resultDisplayTime) {
+                        const delay = resultDisplayTime - handDetectedTime;
+                        console.log("Delay (ms):", delay);
+                    }
+                }
+            } else {
+                gestureOutput.style.display = "none";
+            }
+
+            if (webcamRunning === true) {
+                window.requestAnimationFrame(predictWebcam);
+            }
+        }
+    </script>
+</body>
+</html>
