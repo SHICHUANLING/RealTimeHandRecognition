@@ -82,11 +82,17 @@
                 enableWebcamButton.innerText = "停止识别";
             }
 
-            const constraints = { video: true };
+            const constraints = {             video: {
+                width: { ideal: 480 },
+                height: { ideal: 360 },
+                facingMode: "user" // 确保使用前置摄像头
+            } };
             navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
                 video.srcObject = stream;
                 video.addEventListener("loadeddata", predictWebcam);
             });
+
+
         }
 
         let lastVideoTime = -1;
