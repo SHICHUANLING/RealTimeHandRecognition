@@ -15,7 +15,7 @@
         <!-- 视频和画布部分 -->
         <div class="video-container">
             <div style="position: relative; width: 480px; height: 360px;">
-                <video id="webcam" width="480" height="360" autoplay style="position: absolute; top: 0; left: 0; z-index: 1;"></video>
+                <video id="webcam" width="480" height="360" autoplay playsinline style="position: absolute; top: 0; left: 0; z-index: 1;"></video>
                 <canvas id="output_canvas" width="480" height="360" style="position: absolute; top: 0; left: 0; z-index: 2;"></canvas>
             </div>
 
@@ -31,6 +31,12 @@
             FilesetResolver,
             DrawingUtils
         } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
+
+        const videoElement = document.getElementById('webcam');
+            videoElement.addEventListener('click', (event) => {
+            event.preventDefault(); // 阻止默认全屏行为
+        });
+
 
         let gestureRecognizer;
         let runningMode = "IMAGE";
